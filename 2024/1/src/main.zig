@@ -1,6 +1,8 @@
 // problem link: https://adventofcode.com/2024/day/1
 
 const std = @import("std");
+const timer = std.time.Timer;
+
 const stdout = std.io.getStdOut().writer();
 
 const InputParser = struct {
@@ -85,6 +87,8 @@ const InputParser = struct {
 };
 
 pub fn main() !void {
+    var bench_timer = timer.start() catch unreachable;
+    const bench_start = bench_timer.read();
     const file_contents = try std.fs.cwd().readFileAlloc(std.heap.page_allocator, "inputs.txt", std.math.maxInt(usize));
     defer std.heap.page_allocator.free(file_contents);
 
@@ -97,11 +101,25 @@ pub fn main() !void {
     std.mem.sort(i32, inputParser.list_1.items, {}, std.sort.asc(i32));
     std.mem.sort(i32, inputParser.list_2.items, {}, std.sort.asc(i32));
 
+    var list_2_map = std.AutoHashMap(i32, i32).init(std.heap.page_allocator);
+    for (inputParser.list_2.items) |num| {
+        const count = list_2_map.get(num) orelse 0;
+        list_2_map.put(num, count + 1) catch unreachable;
+    }
+
     var sum: u32 = 0;
+    var similarity: u32 = 0;
     for (0.., inputParser.list_1.items) |idx, num1| {
         const num2 = inputParser.list_2.items[idx];
+
+        similarity += @abs(num1 * (list_2_map.get(num1) orelse 0));
         sum += @abs(num1 - num2);
     }
 
-    stdout.print("Result: {d}\n", .{sum}) catch unreachable;
+    stdout.print("Total Distance: {d}\n", .{sum}) catch unreachable;
+    stdout.print("Similarity Score: {d}\n", .{similarity}) catch unreachable;
+
+    const bench_end = bench_timer.read();
+    const elapsed_ms = @as(f64, @floatFromInt(bench_end - bench_start)) / std.time.ns_per_ms;
+    std.debug.print("Time taken: {d}ms\n", .{elapsed_ms});
 }
