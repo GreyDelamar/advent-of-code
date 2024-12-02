@@ -30,14 +30,28 @@ detect_timer() {
 get_time_ns() {
   case $timer in
   python3)
-    python3 -c 'import time; print(time.time_ns())'
+    python3 -c '
+import time
+import sys
+import subprocess
+cmd = " ".join(sys.argv[1:])
+start = time.perf_counter_ns()
+subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+end = time.perf_counter_ns()
+duration = end - start
+print(duration)
+' "$@"
     ;;
   node)
-    node -e 'const [s, ns] = process.hrtime(); console.log(s * 1e9 + ns);'
+    node -e '
+const { execSync } = require("child_process");
+const cmd = process.argv.slice(1).join(" ");
+const start = process.hrtime.bigint();
+execSync(cmd, {stdio: "ignore"});
+const end = process.hrtime.bigint();
+console.log(Number(end - start));
+' "$@"
     ;;
-  # php)
-  #   php -r 'echo hrtime(true);'
-  #   ;;
   *)
     echo "No suitable language found for nanosecond timing!" >&2
     exit 1
@@ -57,10 +71,11 @@ echo "Running command '$cmd' $n times..."
 
 # Run the command n times and measure time
 for ((i = 1; i <= n; i++)); do
-  start=$(get_time_ns)
-  eval "$cmd" &>/dev/null
-  end=$(get_time_ns)
-  duration=$((end - start))
+  # Get duration directly instead of start/end times
+  if ! duration=$(get_time_ns "$cmd"); then
+    echo "Error running command. Exiting."
+    exit 1
+  fi
   durations+=("$duration")
 done
 
@@ -85,16 +100,16 @@ p90=${sorted[$((n * 90 / 100 - 1))]}
 p95=${sorted[$((n * 95 / 100 - 1))]}
 p99=${sorted[$((n * 99 / 100 - 1))]}
 
-# Convert nanoseconds to seconds for display
-convert_ns_to_seconds() {
-  printf "%.6f\n" "$(echo "$1 / 1000000000" | bc -l)"
+# Convert nanoseconds to milliseconds for display
+convert_ns_to_ms() {
+  printf "%.3f\n" "$(echo "$1 / 1000000" | bc -l)"
 }
 
 echo "Statistics:"
-echo "  Total time: $(convert_ns_to_seconds $total) seconds"
-echo "  Min time: $(convert_ns_to_seconds $min) seconds"
-echo "  Max time: $(convert_ns_to_seconds $max) seconds"
-echo "  Avg time: $(convert_ns_to_seconds $avg) seconds"
-echo "  P90: $(convert_ns_to_seconds $p90) seconds"
-echo "  P95: $(convert_ns_to_seconds $p95) seconds"
-echo "  P99: $(convert_ns_to_seconds $p99) seconds"
+echo "  Total time: $(convert_ns_to_ms $total) ms"
+echo "  Min time: $(convert_ns_to_ms $min) ms"
+echo "  Max time: $(convert_ns_to_ms $max) ms"
+echo "  Avg time: $(convert_ns_to_ms $avg) ms"
+echo "  P90: $(convert_ns_to_ms $p90) ms"
+echo "  P95: $(convert_ns_to_ms $p95) ms"
+echo "  P99: $(convert_ns_to_ms $p99) ms"

@@ -1,124 +1,70 @@
-// problem link: https://adventofcode.com/2024/day/1
-
 const std = @import("std");
-const timer = std.time.Timer;
-
 const stdout = std.io.getStdOut().writer();
 
 const InputParser = struct {
-    source: []const u8,
-    start: u32,
-    current: u32,
-    list_number: u32,
-    list_1: std.ArrayList(i32),
-    list_2: std.ArrayList(i32),
+    allocator: std.mem.Allocator,
+    numbers: std.ArrayList(std.ArrayList(i32)),
 
-    pub fn init(allocator: std.mem.Allocator, source: []const u8) InputParser {
-        return .{ .source = source, .start = 0, .current = 0, .list_number = 1, .list_1 = std.ArrayList(i32).init(allocator), .list_2 = std.ArrayList(i32).init(allocator) };
+    pub fn init(allocator: std.mem.Allocator) InputParser {
+        return .{ .allocator = allocator, .numbers = std.ArrayList(std.ArrayList(i32)).init(allocator) };
     }
 
     pub fn deinit(self: *InputParser) void {
-        self.list_1.deinit();
-        self.list_2.deinit();
+        self.numbers.deinit();
     }
 
-    fn isAtEnd(self: *InputParser) bool {
-        return self.current >= self.source.len;
-    }
+    pub fn parseFile(self: *InputParser, content: []const u8) void {
+        var lines = std.mem.split(u8, content, "\n");
 
-    // consume the next character
-    fn advance(self: *InputParser) u8 {
-        const char = self.source[self.current];
-        self.current += 1;
-        return char;
-    }
+        while (lines.next()) |line| {
+            var numberList = std.ArrayList(i32).init(self.allocator);
+            var numbers = std.mem.tokenize(u8, line, " ");
 
-    // lookahead, but don't consume the character
-    fn peek(self: *InputParser) u8 {
-        if (self.isAtEnd()) return 0;
-        return self.source[self.current];
-    }
+            while (numbers.next()) |num| {
+                const parsed = std.fmt.parseInt(i32, num, 10) catch continue;
+                numberList.append(parsed) catch continue;
+            }
 
-    fn isDigit(char: u8) bool {
-        return char >= '0' and char <= '9';
-    }
-
-    fn isSpace(char: u8) bool {
-        return char == ' ';
-    }
-
-    fn scan(self: *InputParser) void {
-        const char = self.advance();
-
-        switch (char) {
-            // there is are 3 spaces seperating the lists
-            ' ' => {
-                while (isSpace(self.peek())) _ = self.advance();
-                self.list_number += 1;
-            },
-            // new line so we need to reset the list
-            '\n' => self.list_number = 1,
-
-            // grab each digit until there is something other than a digit
-            '0'...'9' => {
-                var number: i32 = char - '0';
-
-                while (isDigit(self.peek())) {
-                    number = number * 10 + (self.advance() - '0');
-                }
-
-                if (self.list_number == 1) {
-                    self.list_1.append(number) catch unreachable;
-                } else {
-                    self.list_2.append(number) catch unreachable;
-                }
-            },
-            // if it isn't something we care about ignore it
-            else => {},
-        }
-    }
-
-    pub fn scan_tokens(self: *InputParser) void {
-        while (!self.isAtEnd()) {
-            self.start = self.current;
-            self.scan();
+            if (numberList.items.len > 0) {
+                self.numbers.append(numberList) catch continue;
+            }
         }
     }
 };
 
-fn calculatePercentile(sorted_times: []f64, percentile: f64) f64 {
-    const index = @as(usize, @intFromFloat(@round(percentile * @as(f64, @floatFromInt(sorted_times.len - 1)))));
-    return sorted_times[index];
+fn isValidSequence(numbers: []const i32) bool {
+    if (numbers.len < 2) return false;
+
+    const isDecreasing = numbers[0] > numbers[1];
+    var prev = numbers[0];
+
+    for (numbers[1..]) |num| {
+        const diff = @abs(num - prev);
+        if (diff < 1 or diff > 3) return false;
+
+        if (isDecreasing and num >= prev) return false;
+        if (!isDecreasing and num <= prev) return false;
+
+        prev = num;
+    }
+    return true;
 }
 
 pub fn main() !void {
-    const file_contents = try std.fs.cwd().readFileAlloc(std.heap.page_allocator, "inputs.txt", std.math.maxInt(usize));
+    const file_contents = try std.fs.cwd().readFileAlloc(std.heap.page_allocator, "inputs/day02.txt", std.math.maxInt(usize));
     defer std.heap.page_allocator.free(file_contents);
 
-    var inputParser = InputParser.init(std.heap.page_allocator, file_contents);
-    defer inputParser.deinit();
+    var parser = InputParser.init(std.heap.page_allocator);
+    defer parser.deinit();
 
-    inputParser.scan_tokens();
+    parser.parseFile(file_contents);
 
-    // sort the lists
-    std.mem.sort(i32, inputParser.list_1.items, {}, std.sort.asc(i32));
-    std.mem.sort(i32, inputParser.list_2.items, {}, std.sort.asc(i32));
-
-    var list_2_map = std.AutoHashMap(i32, i32).init(std.heap.page_allocator);
-    for (inputParser.list_2.items) |num| {
-        const count = list_2_map.get(num) orelse 0;
-        list_2_map.put(num, count + 1) catch unreachable;
+    var safe_count: i32 = 0;
+    for (parser.numbers.items) |sequence| {
+        if (isValidSequence(sequence.items)) {
+            safe_count += 1;
+        }
     }
 
-    var sum: u32 = 0;
-    var similarity: u32 = 0;
-    for (0.., inputParser.list_1.items) |idx, num1| {
-        const num2 = inputParser.list_2.items[idx];
-
-        similarity += @abs(num1 * (list_2_map.get(num1) orelse 0));
-        sum += @abs(num1 - num2);
-    }
-
-    stdout.print("Total Distance: {d}\n", .{sum}) catch unreachable;
-    stdout.print("Similarity Score: {d}\n", .{similarity}) catch unreachable;
+    try stdout.print("safe_count {d}\n", .{safe_count});
 }
