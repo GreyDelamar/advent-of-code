@@ -6,3 +6,7 @@
 **/build-*/
 **/docgen_tmp/
 **/zig-cache/
+**/.DS_Store
+
+# Dont store inputs in git
+**/inputs/
