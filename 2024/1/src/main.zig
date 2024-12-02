@@ -61,11 +61,11 @@ const InputParser = struct {
 
             // grab each digit until there is something other than a digit
             '0'...'9' => {
-                while (isDigit(self.peek())) _ = self.advance();
+                var number: i32 = char - '0';
 
-                // now that we found the end of the "number" grab the whole thing
-                const number_str = self.source[self.start..self.current];
-                const number = std.fmt.parseInt(i32, number_str, 10) catch unreachable;
+                while (isDigit(self.peek())) {
+                    number = number * 10 + (self.advance() - '0');
+                }
 
                 if (self.list_number == 1) {
                     self.list_1.append(number) catch unreachable;
@@ -86,9 +86,12 @@ const InputParser = struct {
     }
 };
 
+fn calculatePercentile(sorted_times: []f64, percentile: f64) f64 {
+    const index = @as(usize, @intFromFloat(@round(percentile * @as(f64, @floatFromInt(sorted_times.len - 1)))));
+    return sorted_times[index];
+}
+
 pub fn main() !void {
-    var bench_timer = timer.start() catch unreachable;
-    const bench_start = bench_timer.read();
     const file_contents = try std.fs.cwd().readFileAlloc(std.heap.page_allocator, "inputs.txt", std.math.maxInt(usize));
     defer std.heap.page_allocator.free(file_contents);
 
@@ -118,8 +121,4 @@ pub fn main() !void {
 
     stdout.print("Total Distance: {d}\n", .{sum}) catch unreachable;
     stdout.print("Similarity Score: {d}\n", .{similarity}) catch unreachable;
-
-    const bench_end = bench_timer.read();
-    const elapsed_ms = @as(f64, @floatFromInt(bench_end - bench_start)) / std.time.ns_per_ms;
-    std.debug.print("Time taken: {d}ms\n", .{elapsed_ms});
 }
