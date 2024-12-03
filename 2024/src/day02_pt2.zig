@@ -35,17 +35,45 @@ const InputParser = struct {
 fn isValidSequence(numbers: []const i32) bool {
     if (numbers.len < 2) return false;
 
-    const isDecreasing = numbers[0] > numbers[1];
-    var prev = numbers[0];
+    // First check if sequence is valid without dropping any numbers
+    if (isValidWithoutDrop(numbers)) return true;
 
-    for (numbers[1..]) |num| {
-        const diff = @abs(num - prev);
+    // Try dropping each number once
+    for (numbers, 0..) |_, skipIdx| {
+        var tempNumbers: [16]i32 = undefined; // Assuming max length of 16, adjust if needed
+        var tempIdx: usize = 0;
+
+        // Create new sequence without the current number
+        for (numbers, 0..) |num, idx| {
+            if (idx != skipIdx) {
+                tempNumbers[tempIdx] = num;
+                tempIdx += 1;
+            }
+        }
+
+        // Check if this modified sequence is valid
+        if (isValidWithoutDrop(tempNumbers[0..tempIdx])) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+fn isValidWithoutDrop(numbers: []const i32) bool {
+    if (numbers.len < 2) return false;
+
+    const isIncreasing = numbers[0] > numbers[1];
+
+    for (numbers[0 .. numbers.len - 1], 0..) |num, idx| {
+        const nextNumber = numbers[idx + 1];
+        const diff = @abs(num - nextNumber);
+
+        // Check if difference is within valid range (1-3)
         if (diff < 1 or diff > 3) return false;
 
-        if (isDecreasing and num >= prev) return false;
-        if (!isDecreasing and num <= prev) return false;
-
-        prev = num;
+        // Check if the sequence maintains its direction (increasing/decreasing)
+        if (isIncreasing != (num > nextNumber)) return false;
     }
     return true;
 }
