@@ -1,6 +1,4 @@
 const std = @import("std");
-const timer = std.time.Timer;
-
 const stdout = std.io.getStdOut().writer();
 
 const TokenType = enum {
@@ -9,10 +7,12 @@ const TokenType = enum {
     mul,
 };
 
-const Token = struct {
-    ttype: TokenType,
-    args: []i32,
+const Args = struct {
+    x: i32,
+    y: i32,
 };
+
+const Token = struct { ttype: TokenType, args: ?Args };
 
 const InputTokenizer = struct {
     source: []const u8,
@@ -46,110 +46,64 @@ const InputTokenizer = struct {
         return self.source[self.current];
     }
 
-    fn peekAhead(self: *InputTokenizer, amt: u32) u8 {
-        if (self.isAtEnd() or self.current + amt >= self.source.len) return 0;
-        return self.source[self.current + amt];
-    }
-
     fn isDigit(char: u8) bool {
         return char >= '0' and char <= '9';
     }
 
-    fn is_U_Or_L(char: u8) bool {
-        return char == 'u' or char == 'l';
-    }
-
-    fn is_left_paren(char: u8) bool {
-        return char == '(';
-    }
-
-    fn is_right_paren(char: u8) bool {
-        return char == ')';
-    }
-
-    fn getArgs(self: *InputTokenizer) []i32 {
-        const left_paren = self.source[self.current];
-        if (left_paren != '(') {
-            return &[_]i32{};
+    // Parses a sequence of digits into a number
+    fn parseNumber(self: *InputTokenizer) ?i32 {
+        var number: ?i32 = null;
+        while (isDigit(self.peek())) {
+            number = if (number) |n| n * 10 + (self.advance() - '0') else (self.advance() - '0');
         }
-        // consume paren
+        return number;
+    }
+
+    // Parses arguments in the format (x,y)
+    fn parseArgs(self: *InputTokenizer) ?Args {
+        if (self.peek() != '(') return null;
         _ = self.advance();
 
-        var number1: ?i32 = null;
+        const x = self.parseNumber() orelse return null;
 
-        while (isDigit(self.peek())) {
-            number1 = if (number1) |n| n * 10 + (self.advance() - '0') else (self.advance() - '0');
-        }
-
-        const comma = self.peek();
-        if (comma != ',' and number1 != null) {
-            return &[_]i32{};
-        } else if (comma == ',') {
-            _ = self.advance();
-        }
-
-        var number2: ?i32 = null;
-        while (isDigit(self.peek())) {
-            number2 = if (number2) |n| n * 10 + (self.advance() - '0') else (self.advance() - '0');
-        }
-
-        const right_paren = self.source[self.current];
-        if (right_paren != ')') {
-            return &[_]i32{};
-        }
+        if (self.peek() != ',') return null;
         _ = self.advance();
 
-        var result = self.tokens.allocator.alloc(i32, 2) catch unreachable;
-        if (number1 != null and number2 != null) {
-            result[0] = number1 orelse 0;
-            result[1] = number2 orelse 0;
-        }
+        const y = self.parseNumber() orelse return null;
 
-        return result;
+        if (self.peek() != ')') return null;
+        _ = self.advance();
+
+        return .{ .x = x, .y = y };
     }
 
     fn scan(self: *InputTokenizer) void {
         const char = self.advance();
 
         switch (char) {
-            // new line so we need to reset the list
             '\n' => self.line_number = 1,
-
-            // looking for do & don't
             'd', 'm' => {
+                // Consume the rest of the identifier
                 while ((self.peek() >= 'a' and self.peek() <= 'z') or self.peek() == '\'') _ = self.advance();
+                const identifier = self.source[self.start..self.current];
 
-                const identifierText = self.source[self.start..self.current];
+                // Map identifiers to token types
+                const token_type: ?TokenType = if (std.mem.eql(u8, identifier, "do"))
+                    .do
+                else if (std.mem.eql(u8, identifier, "don't"))
+                    .dont
+                else if (std.mem.eql(u8, identifier, "mul"))
+                    .mul
+                else
+                    null;
 
-                if (!is_left_paren(self.peek())) {
-                    return;
-                }
-                stdout.print("identifierText {c}\n", .{identifierText}) catch unreachable;
+                if (token_type) |tt| {
+                    const args = self.parseArgs();
 
-                if (std.mem.eql(u8, identifierText, "do")) {
-                    const args = self.getArgs();
-
-                    if (!is_right_paren(self.source[self.current - 1])) {
-                        return;
-                    }
-
-                    self.tokens.append(.{ .ttype = TokenType.do, .args = args }) catch unreachable;
-                } else if (std.mem.eql(u8, identifierText, "don't")) {
-                    const args = self.getArgs();
-
-                    if (!is_right_paren(self.source[self.current - 1])) {
-                        return;
-                    }
-
-                    self.tokens.append(.{ .ttype = TokenType.dont, .args = args }) catch unreachable;
-                } else if (std.mem.eql(u8, identifierText, "mul")) {
-                    const args = self.getArgs();
-
-                    if (!is_right_paren(self.source[self.current - 1])) {
-                        return;
-                    }
-
-                    self.tokens.append(.{ .ttype = TokenType.mul, .args = args }) catch unreachable;
+                    self.tokens.append(.{
+                        .ttype = tt,
+                        .args = args,
+                    }) catch unreachable;
                 }
             },
             else => {},
@@ -170,24 +124,22 @@ pub fn main() !void {
 
     var inputTokenizer = InputTokenizer.init(std.heap.page_allocator, file_contents);
     defer inputTokenizer.deinit();
-
     inputTokenizer.scan_tokens();
 
     var total: i32 = 0;
-    var skipping = false;
-    for (inputTokenizer.tokens.items) |tk| {
-        if (tk.ttype == TokenType.do) {
-            skipping = false;
-            continue;
-        }
+    var skip_mode = false;
 
-        if (tk.ttype == TokenType.dont or skipping) {
-            skipping = true;
-            continue;
+    for (inputTokenizer.tokens.items) |token| {
+        switch (token.ttype) {
+            .do => skip_mode = false,
+            .dont => skip_mode = true,
+            .mul => if (!skip_mode) {
+                if (token.args) |args| {
+                    total += args.x * args.y;
+                }
+            },
         }
-
-        total += tk.args[0] * tk.args[1];
     }
 
-    stdout.print("Total: {d}\n", .{total}) catch unreachable;
+    try stdout.print("Total: {d}\n", .{total});
 }
