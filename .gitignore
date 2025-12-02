@@ -7,6 +7,11 @@
 **/docgen_tmp/
 **/zig-cache/
 **/.DS_Store
+**/node_modules/
+
 
 # Dont store inputs in git
 **/inputs/
+
+# Ignore past years
+**/2024/
