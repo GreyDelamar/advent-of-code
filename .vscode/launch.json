@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "bun",
+            "request": "launch",
+            "name": "Debug Current File",
+            "runtimeArgs": [
+                "--inspect-brk"
+            ],
+            "program": "${file}",
+            "cwd": "${fileDirname}",
+            "internalConsoleOptions": "neverOpen"
+        }
+    ]
+}
